@@ -1,20 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '../api/axios';
 
-interface UseWebRTCOptions {
+interface Props {
   camId: string;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   onError?: (error: string) => void;
   onConnectionStateChange?: (state: RTCIceConnectionState) => void;
   maxReconnectAttempts?: number;
   reconnectDelay?: number;
-}
-
-interface UseWebRTCReturn {
-  videoRef: React.RefObject<HTMLVideoElement | null>;
-  connectionState: RTCIceConnectionState;
-  error: string | null;
-  isConnecting: boolean;
-  reconnect: () => void;
 }
 
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 3;
@@ -22,12 +15,12 @@ const DEFAULT_RECONNECT_DELAY = 2000;
 
 export function useWebRTC({
   camId,
+  videoRef,
   onError,
   onConnectionStateChange,
   maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS,
   reconnectDelay = DEFAULT_RECONNECT_DELAY,
-}: UseWebRTCOptions): UseWebRTCReturn {
-  const videoRef = useRef<HTMLVideoElement>(null);
+}: Props) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -54,7 +47,7 @@ export function useWebRTC({
       stream.getTracks().forEach((track) => track.stop());
       videoRef.current.srcObject = null;
     }
-  }, []);
+  }, [videoRef]);
 
   const connect = useCallback(async () => {
     try {
@@ -168,6 +161,7 @@ export function useWebRTC({
     }
   }, [
     camId,
+    videoRef,
     cleanup,
     maxReconnectAttempts,
     reconnectDelay,
@@ -190,10 +184,9 @@ export function useWebRTC({
       cleanup();
       reconnectAttemptsRef.current = 0;
     };
-  }, [camId, connect, cleanup]);
+  }, [camId, connect, cleanup, videoRef]);
 
   return {
-    videoRef,
     connectionState,
     error,
     isConnecting,

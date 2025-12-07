@@ -14,7 +14,9 @@ import StreamingFooter from '../components/StreamingFooter';
 export default function StreamingPage() {
   const { camId } = useParams<{ camId: string }>();
 
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const targetVideoRef = useRef<HTMLVideoElement>(null);
+  const shooterVideoRef = useRef<HTMLVideoElement>(null);
+
   const [polygon, setPolygon] = useState<number[][] | null>(null);
 
   const {
@@ -33,7 +35,7 @@ export default function StreamingPage() {
   const [targetCamError, setTargetCamError] = useState<string | null>(null);
   const [shooterCamError, setShooterCamError] = useState<string | null>(null);
 
-  const renderRect = useVideoSize(videoRef);
+  const renderRect = useVideoSize(targetVideoRef);
   const hit = useHit(message);
 
   const isVisible = useVisibility();
@@ -142,7 +144,7 @@ export default function StreamingPage() {
               <div className='relative w-full h-full'>
                 <CamWebRTC
                   camId={camId}
-                  ref={videoRef}
+                  videoRef={targetVideoRef}
                   onError={setTargetCamError}
                   onConnectionStateChange={setTargetCamState}
                 />
@@ -214,6 +216,7 @@ export default function StreamingPage() {
                 cover
                 onError={setShooterCamError}
                 onConnectionStateChange={setShooterCamState}
+                videoRef={shooterVideoRef}
               />
             </div>
           </div>
