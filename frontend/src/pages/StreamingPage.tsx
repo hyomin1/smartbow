@@ -78,6 +78,10 @@ export default function StreamingPage() {
     shooterCamState
   );
 
+  if (hit) {
+    console.log(new Date(Date.now()).toLocaleString(), hit);
+  }
+
   return (
     <div className='relative h-screen bg-black overflow-hidden'>
       <div className='absolute inset-0 bg-gradient-to-br from-purple-950 via-black to-cyan-950 opacity-50' />
