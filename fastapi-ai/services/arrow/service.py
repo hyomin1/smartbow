@@ -60,6 +60,17 @@ class ArrowService:
         if event["type"] == "arrow" and event["tip"] is not None:
             tip = event["tip"]
 
+            exclusion_zones = [
+                ((30, 300), (120, 450)),
+                ((350, 400), (410, 530)),
+                ((740, 210), (900, 350)),
+            ]
+
+            for (x1, y1), (x2, y2) in exclusion_zones:
+                if (x1 <= tip[0] <= x2) and (y1 <= tip[1] <= y2):
+                    logger.debug(f"Tip ({tip[0]}, {tip[1]}) 오탐 영역 버퍼 추가 X")
+                    return
+
             if self.tracking_buffer:
                 last = self.tracking_buffer[-1]
                 last_x, last_y = last[0], last[1]
