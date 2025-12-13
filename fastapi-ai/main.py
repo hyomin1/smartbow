@@ -48,8 +48,7 @@ def on_person_event(cam_id, event):
     if person_service is None:
         logger.warning(f"사람 감지 서비스를 찾을 수 없음 - 카메라 ID: {cam_id}")
         return
-
-    person_service.set_zoom_area(event["bbox"])
+    person_service.update_detections(event["persons"])
 
 
 def idle_watcher():
@@ -111,16 +110,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"  ✗ 카메라 연결 실패: {cam_id} - {e}")
 
-    # logger.info(f"사람 감지 서비스 초기화 시작 (총 {len(PERSON_INFER_CONFIG)}개)")
-    # for cam_key, config in PERSON_INFER_CONFIG.items():
-    #     cam_id = config["id"]
-    #     port = config["infer_port"]
-    #     try:
-    #         logger.info(f"  → 카메라 연결 시도: {cam_id} (포트: {port})")
-    #         start_subscriber_thread(port, cam_id, on_person_event)
-    #         logger.info(f"  ✓ 카메라 연결 성공: {cam_id}")
-    #     except Exception as e:
-    #         logger.error(f"  ✗ 카메라 연결 실패: {cam_id} - {e}")
+    logger.info(f"사람 감지 서비스 초기화 시작 (총 {len(PERSON_INFER_CONFIG)}개)")
+    for cam_key, config in PERSON_INFER_CONFIG.items():
+        cam_id = config["id"]
+        port = config["infer_port"]
+        try:
+            logger.info(f"  → 카메라 연결 시도: {cam_id} (포트: {port})")
+            start_subscriber_thread(port, cam_id, on_person_event)
+            logger.info(f"  ✓ 카메라 연결 성공: {cam_id}")
+        except Exception as e:
+            logger.error(f"  ✗ 카메라 연결 실패: {cam_id} - {e}")
 
     t = threading.Thread(target=idle_watcher, daemon=True)
     t.start()

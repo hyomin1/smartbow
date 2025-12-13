@@ -7,7 +7,12 @@ interface Props {
   isVisible?: boolean;
 }
 
-export default function TargetOverlayView({ hit, polygon, renderRect, isVisible = true }: Props) {
+export default function TargetOverlayView({
+  hit,
+  polygon,
+  renderRect,
+  isVisible = true,
+}: Props) {
   if (!polygon || polygon.length < 4) return null;
 
   const lerp = (p1: number[], p2: number[], t: number) => [
@@ -15,18 +20,14 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
     p1[1] + (p2[1] - p1[1]) * t,
   ];
 
-  // 폴리곤의 중심 계산
   const centerX = polygon.reduce((sum, p) => sum + p[0], 0) / polygon.length;
   const centerY = polygon.reduce((sum, p) => sum + p[1], 0) / polygon.length;
 
-  // 화면 중앙
   const screenCenterX = renderRect.w / 2;
   const screenCenterY = renderRect.h / 2;
 
-  // 확대 비율
   const scale = 1.3;
 
-  // 확대 + 중앙 이동
   const scaledPolygon = polygon.map(([x, y]) => [
     screenCenterX + (x - centerX) * scale,
     screenCenterY + (y - centerY) * scale,
@@ -44,7 +45,6 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
     right: lerp(sB, sC, t),
   }));
 
-  // 히트 좌표도 변환
   const scaledHit = hit
     ? [
         screenCenterX + (hit[0] - centerX) * scale,
@@ -94,13 +94,11 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
         </radialGradient>
       </defs>
 
-      {/* 배경 오버레이 */}
       <polygon
         points={scaledPolygon.map(([x, y]) => `${x},${y}`).join(' ')}
         fill='rgba(0,255,200,0.02)'
       />
 
-      {/* 메인 테두리 - 애니메이션 */}
       <motion.polygon
         points={scaledPolygon.map(([x, y]) => `${x},${y}`).join(' ')}
         fill='none'
@@ -120,7 +118,6 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
         }}
       />
 
-      {/* 그리드 라인 - 세로 */}
       {verticalLines.map(({ top, bottom }, i) => (
         <motion.line
           key={`v${i}`}
@@ -137,7 +134,6 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
         />
       ))}
 
-      {/* 그리드 라인 - 가로 */}
       {horizontalLines.map(({ left, right }, i) => (
         <motion.line
           key={`h${i}`}
@@ -154,7 +150,6 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
         />
       ))}
 
-      {/* 격자 번호 */}
       {(() => {
         const cellNumbers = [
           [1, 2, 3],
@@ -209,10 +204,8 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
         );
       })()}
 
-      {/* 히트 마커 */}
       {scaledHit && (
         <g>
-          {/* 외곽 펄스 링 1 */}
           <motion.circle
             cx={scaledHit[0]}
             cy={scaledHit[1]}
@@ -223,13 +216,16 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
             initial={{ r: 10, opacity: 0 }}
             animate={
               isVisible
-                ? { r: [10, 40, 60], opacity: [0.8, 0.4, 0], strokeWidth: [3, 2, 1] }
+                ? {
+                    r: [10, 40, 60],
+                    opacity: [0.8, 0.4, 0],
+                    strokeWidth: [3, 2, 1],
+                  }
                 : { r: 10, opacity: 0 }
             }
             transition={{ duration: 1.5, repeat: Infinity, ease: 'easeOut' }}
           />
 
-          {/* 외곽 펄스 링 2 */}
           <motion.circle
             cx={scaledHit[0]}
             cy={scaledHit[1]}
@@ -251,7 +247,6 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
             }}
           />
 
-          {/* 중간 글로우 */}
           <motion.circle
             cx={scaledHit[0]}
             cy={scaledHit[1]}
@@ -265,7 +260,6 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
             transition={{ duration: 1.5, repeat: Infinity }}
           />
 
-          {/* 회전하는 크로스헤어 */}
           <motion.g
             animate={isVisible ? { rotate: 360 } : { rotate: 0 }}
             transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
@@ -309,7 +303,6 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
             />
           </motion.g>
 
-          {/* 중앙 타겟 링 */}
           <motion.circle
             cx={scaledHit[0]}
             cy={scaledHit[1]}
@@ -326,7 +319,6 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
             transition={{ duration: 1, repeat: Infinity }}
           />
 
-          {/* 중앙 포인트 */}
           <motion.circle
             cx={scaledHit[0]}
             cy={scaledHit[1]}
@@ -344,7 +336,6 @@ export default function TargetOverlayView({ hit, polygon, renderRect, isVisible 
             }}
           />
 
-          {/* 중앙 하이라이트 */}
           <motion.circle
             cx={scaledHit[0]}
             cy={scaledHit[1]}
