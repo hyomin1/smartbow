@@ -6,7 +6,7 @@ from subscriber import start_subscriber_thread
 from config import ARROW_INFER_CONFIG, PERSON_INFER_CONFIG, ALLOW_ORIGINS, LOG_DIR
 from services.arrow.registry import arrow_registry
 from services.person.registry import person_registry
-from routers import webrtc, ws
+from routers import webrtc, ws, auth
 from datetime import datetime
 
 
@@ -151,6 +151,7 @@ app.add_middleware(
 )
 app.include_router(webrtc.router, prefix="/webrtc", tags=["webrtc"])
 app.include_router(ws.router, prefix="/ws", tags=["ws"])
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 
 @app.get("/")
