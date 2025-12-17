@@ -29,11 +29,8 @@ class User(Base):
         index=True,
     )
 
-    userId = Column(String(50), unique=True, nullable=True)
+    userId = Column(String(50), unique=True, nullable=False)
     hashed_password = Column(String(100), nullable=True)
-
-
-    kakao_id = Column(String(50), unique=True, nullable=True)
 
     name = Column(String(50), nullable=False)
 
@@ -48,6 +45,12 @@ class User(Base):
         ForeignKey("archery_ranges.id"),
         nullable=True,
         index=True
+    )
+
+    face_embeddings = relationship(
+        "FaceEmbedding",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     created_at = Column(
