@@ -11,4 +11,9 @@ class LoginResponse(BaseModel):
 
 class KakaoLoginRequest(BaseModel):
     kakao_access_token:str
-    
+
+class MeResponse(BaseModel):
+    userId:str
+    name:str
+    role:str
+    has_face: bool

@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -29,7 +29,7 @@ class User(Base):
         index=True,
     )
 
-    userId = Column(String(50), unique=True, nullable=False)
+    userId = Column(String(50), unique=True, nullable=False, index=True)
     hashed_password = Column(String(100), nullable=True)
 
     name = Column(String(50), nullable=False)
@@ -45,6 +45,13 @@ class User(Base):
         ForeignKey("archery_ranges.id"),
         nullable=True,
         index=True
+    )
+
+    has_face = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        index=True,
     )
 
     face_embeddings = relationship(

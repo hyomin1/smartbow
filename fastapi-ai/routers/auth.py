@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Depends, status
+from models.user import User
 
 
 from services.auth.service import authenticate_user, authenticate_kakao_user
-from services.auth.schema import LoginRequest, KakaoLoginRequest, LoginResponse
+from services.auth.schema import LoginRequest, KakaoLoginRequest, LoginResponse, MeResponse
 
+from core.deps import get_current_user
 
 router = APIRouter()
 
@@ -36,3 +38,14 @@ async def kakao_login(req: KakaoLoginRequest):
             detail="Invalid credentials",
         )
     return {"access_token": token}
+
+@router.get('/me',
+            response_model=MeResponse,
+            status_code=status.HTTP_200_OK)
+async def get_me(user:User = Depends(get_current_user)):
+    return {
+        "userId": user.userId,
+        "name":user.name,
+        "role":user.role,
+        "has_face":user.has_face,
+    }
