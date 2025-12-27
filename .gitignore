@@ -9,6 +9,10 @@ fastapi-ai/config.py
 
 yolo*
 
+alembic.*
+alembic/
+db.py
+
 
 data/
 logs/
