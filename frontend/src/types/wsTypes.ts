@@ -6,6 +6,12 @@ type PolygonMessage = {
 export type HitMessage = {
   type: 'hit';
   tip: [number, number];
+  inside: boolean;
+};
+
+export type Hit = {
+  tip: [number, number];
+  inside: boolean;
 };
 
 export type WsMessage = PolygonMessage | HitMessage;
