@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { WsMessage } from '../types/wsTypes';
-
-type Hit = [number, number];
+import type { Hit, WsMessage } from '../types/wsTypes';
 
 export function useHit(message: WsMessage | null) {
   const [hit, setHit] = useState<Hit | null>(null);
@@ -9,7 +7,8 @@ export function useHit(message: WsMessage | null) {
   useEffect(() => {
     if (!message) return;
     if (message.type === 'hit') {
-      setHit(message.tip);
+      const { tip, inside } = message;
+      setHit({ tip, inside });
     }
   }, [message]);
 
