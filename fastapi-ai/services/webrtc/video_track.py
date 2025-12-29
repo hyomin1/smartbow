@@ -1,28 +1,27 @@
-import asyncio, cv2, time
+import asyncio
+import time
+
+import cv2
 from aiortc import VideoStreamTrack
 from av import VideoFrame
 
+from services.frame.shm_registry import get_frame_buffer
+
 
 class CameraVideoTrack(VideoStreamTrack):
-    def __init__(self, arrow_service, person_service):
+    def __init__(self, cam_id: str, shape, arrow_service, person_service, fps_limit=30):
         super().__init__()
-        self.queue = asyncio.Queue(maxsize=2)
+        self.cam_id = cam_id
+        self.shape = shape
         self.arrow_service = arrow_service
         self.person_service = person_service
-        self.last_frame_time = 0
-        self.fps_limit = 20
 
-    async def push(self, frame):
-        if self.queue.full():
-            try:
-                self.queue.get_nowait()
-            except:
-                pass
-        await self.queue.put(frame)
+        self.last_frame_time = 0
+        self.fps_limit = fps_limit
+
+        self.shm = get_frame_buffer(cam_id, shape)
 
     async def recv(self):
-        frame = await self.queue.get()
-
         now = time.time()
         elapsed = now - self.last_frame_time
         target_delay = 1.0 / self.fps_limit
@@ -32,34 +31,43 @@ class CameraVideoTrack(VideoStreamTrack):
 
         self.last_frame_time = time.time()
 
-        frame = frame.copy()
-        self.arrow_service.last_frame = (
-            frame.copy()
-        )  # 화살 위치 디버그용 추후 서비스 안정화되면 제거
+        frame = self.shm.read()
+        if frame is None:
+            raise asyncio.TimeoutError
 
-        persons = self.person_service.get_detections()
+        processed_frame = frame.copy()
 
-        for p in persons:
-            x1, y1, x2, y2 = map(int, p["bbox"])
-            state = p["state"]
+        # 화살 위치 디버그용 추후 서비스 안정화되면 제거
+        self.arrow_service.last_frame = processed_frame
+        curr = self.arrow_service.current_arrow
+        if curr:
+            t1 = tuple(map(int, curr["tail"]))
+            t2 = tuple(map(int, curr["tip"]))
 
-            color = (255, 0, 0) if state == "drawing" else (180, 180, 180)
+            cv2.line(processed_frame, t1, t2, (0, 255, 0), 2, cv2.LINE_AA)
 
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        person = self.person_service.get_detection()
+
+        if person:
+            x1, y1, x2, y2 = map(int, person["bbox"])
+            conf = person["conf"]
+            cv2.rectangle(
+                processed_frame, (x1, y1), (x2, y2), (255, 0, 0), 2, cv2.LINE_AA
+            )
             cv2.putText(
-                frame,
-                state,
-                (x1, y1 - 6),
+                processed_frame,
+                f"{conf:.2f}",
+                (x1, y1 - 5),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                color,
-                1,
+                0.9,
+                (255, 0, 0),
+                2,
+                cv2.LINE_AA,
             )
 
-        if self.arrow_service.last_bbox:
-            x1, y1, x2, y2 = map(int, self.arrow_service.last_bbox)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        # 오탐영역 확인
+        # cv2.rectangle(processed_frame, (640, 280), (700, 410), (0, 0, 255), 2)
 
-        av_frame = VideoFrame.from_ndarray(frame, format="bgr24")
+        av_frame = VideoFrame.from_ndarray(processed_frame, format="bgr24")
         av_frame.pts, av_frame.time_base = await self.next_timestamp()
         return av_frame

@@ -1,14 +1,22 @@
-import zmq, threading
+import threading
+
+import zmq
 
 
-def start_subscriber_thread(port, cam_id, callback):
-
+def start_subscriber_thread(ipc_name, cam_id, callback):
     def run():
         ctx = zmq.Context()
         socket = ctx.socket(zmq.SUB)
-        socket.connect(f"tcp://127.0.0.1:{port}")
-        socket.subscribe("")
-        print(f"[SUB] Connected → cam={cam_id}, port={port}")
+
+        ipc_path = f"ipc:///tmp/{ipc_name}.ipc"
+
+        try:
+            socket.connect(ipc_path)
+            socket.subscribe("")
+            print(f"[SUB] Connected (IPC) → cam={cam_id}, path={ipc_path}")
+        except Exception as e:
+            print(f"[SUB] Connection Failed({cam_id}): {e}")
+            return
 
         while True:
             try:

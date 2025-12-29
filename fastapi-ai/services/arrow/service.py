@@ -1,22 +1,33 @@
-import time, cv2, numpy as np, os, datetime, logging
+import datetime
+import logging
+import os
+import time
 from collections import deque
+
+import cv2
+import numpy as np
 from config import BASE_DIR
 
-logger = logging.getLogger(__name__)
+from services.arrow.tracker import ArrowTracker
+
+logger = logging.getLogger("smartbow.arrow")
 
 
 class ArrowService:
-    def __init__(self, buffer_size=10, idle_sec=2.0, cooldown_sec=8.0):
+    def __init__(self, buffer_size=50, idle_sec=2.0, cooldown_sec=8.0):
         self.tracking_buffer = deque(maxlen=buffer_size)
+        self.tracker = ArrowTracker()
+
         self.idle_sec = idle_sec
         self.cooldown_sec = cooldown_sec
         self.last_event_time = None
         self.last_hit_time = 0.0
-        self.target = None
-        self.last_bbox = None
 
+        self.target = None
         self.frame_size = None
         self.last_frame = None  # 화살 위치 디버그용 추후 서비스 안정화되면 제거
+
+        self.current_arrow = None
 
     def to_render_coords(self, x, y, video_size):
         if video_size is None or self.frame_size is None:
@@ -24,18 +35,11 @@ class ArrowService:
 
         render_w, render_h = video_size
         frame_w, frame_h = self.frame_size
-
-        scale_x = render_w / frame_w
-        scale_y = render_h / frame_h
-        scale = min(scale_x, scale_y)
-
+        scale = min(render_w / frame_w, render_h / frame_h)
         pad_x = (render_w - frame_w * scale) / 2
         pad_y = (render_h - frame_h * scale) / 2
 
-        rx = x * scale + pad_x
-        ry = y * scale + pad_y
-
-        return [float(rx), float(ry)]
+        return [float(x * scale + pad_x), float(y * scale + pad_y)]
 
     def polygon_to_render(self, video_size):
         if self.target is None or self.frame_size is None:
@@ -49,144 +53,139 @@ class ArrowService:
 
         return render_poly
 
+    def _is_inside_target(self, point):
+        if self.target is None or point is None:
+            return False
+        return cv2.pointPolygonTest(self.target, point, False) >= 0
+
+    def check_buffer_validity(self):
+        if len(self.tracking_buffer) < 2:
+            return False
+        cases = [data.get("case") for data in self.tracking_buffer]
+
+        # 버퍼에 모두 직선만 검출된 경우
+        if all(c == "C" for c in cases):
+            return False
+
+        return True
+
+    def is_point_in_rect(self, point, rect):
+        if point is None:
+            return False
+        x, y = point
+        x1, y1, x2, y2 = rect
+        return x1 <= x <= x2 and y1 <= y <= y2
+
     def add_event(self, event):
+        if self.last_hit_time > 0:
+            if time.time() - self.last_hit_time < self.cooldown_sec:
+                logger.debug("판정중 버퍼 추가 스킵")
+                return
 
         if event.get("target") is not None:
             self.target = np.array(event["target"], dtype=np.int32)
-
         if event.get("frame_size") is not None:
             self.frame_size = tuple(event["frame_size"])
 
-        if event["type"] == "arrow" and event["tip"] is not None:
-            tip = event["tip"]
-
-            exclusion_zones = [
-                ((260, 350), (340, 540)),
-                ((30, 300), (120, 450)),
-                ((1000, 300), (1280, 850)),
-                ((630, 200), (720, 350)),
-            ]
-
-            for (x1, y1), (x2, y2) in exclusion_zones:
-                if (x1 <= tip[0] <= x2) and (y1 <= tip[1] <= y2):
-                    logger.debug(f"Tip ({tip[0]}, {tip[1]}) 오탐 영역 버퍼 추가 X")
-                    return
-
-            if self.tracking_buffer:
-                last = self.tracking_buffer[-1]
-                last_x, last_y = last[0], last[1]
-                if (abs(last_x - tip[0]) < 5) and (abs(last_y - tip[1]) < 5):
-                    return
-
-            x1, y1, x2, y2 = event["bbox"]
-            self.last_bbox = (x1, y1, x2, y2)
-
-            # 화살 위치 디버그용 추후 서비스 안정화되면 제거
-            arrow_crop = None
-            if self.last_frame is not None:
-                try:
-                    arrow_crop = self.last_frame[y1:y2, x1:x2].copy()
-                except Exception as e:
-                    logger.debug(f"화살 crop 실패: {e}")
+        if event["type"] == "arrow":
+            arrow_data = self.tracker.step(event.get("bbox"), event.get("motion_line"))
+            if not arrow_data:
+                return
+            tip = arrow_data["tip"]
+            tail = arrow_data["tail"]
+            IGNORE_RECT = (640, 280, 700, 410)
+            if self.is_point_in_rect(tip, IGNORE_RECT) or self.is_point_in_rect(
+                tail, IGNORE_RECT
+            ):
+                return
+            self.current_arrow = {"tip": arrow_data["tip"], "tail": arrow_data["tail"]}
 
             self.tracking_buffer.append(
-                (
-                    tip[0],
-                    tip[1],
-                    event["timestamp"],
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    arrow_crop,
-                    event["conf"],
-                )
+                {
+                    "tip": tip,
+                    "tail": tail,
+                    "timestamp": event["timestamp"],
+                    "case": event["case"],
+                }
             )
-            self.last_event_time = time.time()
-        else:
-            self.last_bbox = None
 
-    def visualize_buffer(self, hit_point):
+            self.last_event_time = time.time()
+
+    def visualize_buffer(self, hit_point, reason, height):
         if not self.tracking_buffer or self.last_frame is None:
             return
 
         vis_frame = self.last_frame.copy()
 
-        for i, data in enumerate(self.tracking_buffer):
-            if len(data) == 9:  # crop 포함된 버전
-                x, y, t, x1, y1, x2, y2, arrow_crop, confidence = data
-                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-
-                if arrow_crop is not None:
-                    h, w = arrow_crop.shape[:2]
-                    try:
-                        vis_frame[y1 : y1 + h, x1 : x1 + w] = arrow_crop
-                    except:
-                        pass
-
-                # bbox 색상
-                alpha = (i + 1) / len(self.tracking_buffer)
-                color = (0, int(255 * alpha), int(255 * (1 - alpha)))
-
-                # bbox 테두리
-                cv2.rectangle(vis_frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(
-                    vis_frame,
-                    str(i),
-                    (x1, y1 - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    color,
-                    2,
-                )
-
-                cv2.putText(
-                    vis_frame,
-                    f"{confidence:.2f}",
-                    (x1, y2 + 15),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 0),
-                    2,
-                )
-                cv2.circle(vis_frame, (int(x), int(y)), 4, color, -1)
-
-        if hit_point is not None:
-            hit_x, hit_y = int(hit_point[0]), int(hit_point[1])
-            cv2.circle(vis_frame, (hit_x, hit_y), 15, (0, 0, 255), 3)
-            cv2.circle(vis_frame, (hit_x, hit_y), 5, (0, 0, 255), -1)
+        if reason and height:
             cv2.putText(
                 vis_frame,
-                "HIT",
-                (hit_x + 20, hit_y),
+                f"HIT TYPE: {reason} HEIGHT: ({height})",
+                (20, 35),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1.0,
-                (0, 0, 255),
-                3,
+                (0, 0, 255),  # 아무 색이나
+                2,
+                cv2.LINE_AA,
             )
+
+        for i, data in enumerate(self.tracking_buffer):
+            tip = data["tip"]
+            tail = data["tail"]
+            case = data["case"]
+
+            alpha = (i + 1) / len(self.tracking_buffer)
+            color = (0, int(255 * alpha), int(255 * (1 - alpha)))
+
+            cv2.line(
+                vis_frame,
+                (int(tail[0]), int(tail[1])),
+                (int(tip[0]), int(tip[1])),
+                color,
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.circle(vis_frame, (int(tip[0]), int(tip[1])), 3, (0, 0, 255), -1)
+
             cv2.putText(
                 vis_frame,
-                f"({hit_x}, {hit_y})",
-                (hit_x + 20, hit_y + 25),
+                f"{i} {case}",
+                (int(tip[0]) + 6, int(tip[1]) - 6),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 0, 255),
-                2,
+                0.7,
+                color,
+                1,
+                cv2.LINE_AA,
             )
 
-        now = datetime.datetime.now()
-        date_str = now.strftime("%Y-%m-%d")
-        time_str = now.strftime("%H-%M-%S")
-        save_dir = os.path.join(BASE_DIR, date_str)
-        os.makedirs(save_dir, exist_ok=True)
+            if hit_point:
+                hx, hy = int(hit_point[0]), int(hit_point[1])
+                cv2.drawMarker(
+                    vis_frame, (hx, hy), (0, 0, 255), cv2.MARKER_TILTED_CROSS, 25, 3
+                )
+                cv2.putText(
+                    vis_frame,
+                    f"HIT ({hx},{hy})",
+                    (hx + 10, hy - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 0, 255),
+                    2,
+                )
 
-        save_path = os.path.join(save_dir, f"{time_str}.jpg")
-        cv2.imwrite(save_path, vis_frame)
+            now = datetime.datetime.now()
+            save_dir = os.path.join(BASE_DIR, now.strftime("%Y-%m-%d"))
+            os.makedirs(save_dir, exist_ok=True)
+            cv2.imwrite(
+                os.path.join(save_dir, f"{now.strftime('%H-%M-%S')}.jpg"), vis_frame
+            )
 
     def is_idle(self):
         if not self.tracking_buffer or self.last_event_time is None:
             return False
         now = time.time()
+        if now - self.last_event_time > 0.5:
+            self.current_arrow = None
         if now - self.last_hit_time < self.cooldown_sec:
             return False
 
@@ -194,34 +193,26 @@ class ArrowService:
 
     def clear_buffer(self):
         self.tracking_buffer.clear()
+        self.tracker.reset()
 
     def _closest_point_on_polygon(self, point, polygon):
-
         px, py = point
         min_dist = float("inf")
         closest_point = None
 
         for i in range(len(polygon)):
-            p1 = polygon[i]
-            p2 = polygon[(i + 1) % len(polygon)]  # 다음 꼭짓점 (마지막은 첫번째로)
-
-            # 선분 p1-p2에서 point까지 가장 가까운 점 찾기
+            p1, p2 = polygon[i], polygon[(i + 1) % len(polygon)]
             x1, y1 = float(p1[0]), float(p1[1])
             x2, y2 = float(p2[0]), float(p2[1])
 
-            # 선분의 방향 벡터
-            dx = x2 - x1
-            dy = y2 - y1
+            dx, dy = x2 - x1, y2 - y1
 
-            if dx == 0 and dy == 0:  # 같은 점이면 스킵
+            if dx == 0 and dy == 0:
                 continue
 
-            # t = 선분 위의 위치 (0~1 사이)
             t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)))
 
-            # 선분 위의 가장 가까운 점
-            closest_x = x1 + t * dx
-            closest_y = y1 + t * dy
+            closest_x, closest_y = x1 + t * dx, y1 + t * dy
 
             # 거리 계산
             dist = np.sqrt((px - closest_x) ** 2 + (py - closest_y) ** 2)
@@ -232,12 +223,158 @@ class ArrowService:
 
         return closest_point
 
-    def find_hit_point(self):
-        if len(self.tracking_buffer) < 2:
+    def intersect_line_point(self, p1, p2, q1, q2):
+        x1, y1 = p1
+        x2, y2 = p2
+        x3, y3 = q1
+        x4, y4 = q2
+
+        denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        if abs(denom) < 1e-6:
+            return None
+
+        px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / denom
+        py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / denom
+
+        return [float(px), float(py)]
+
+    def new_find_hit_point(self):
+        if not self.check_buffer_validity():
             self.clear_buffer()
             return None
 
-        y_coords = [data[1] for data in self.tracking_buffer]
+        y_coords = [data["tip"][1] for data in self.tracking_buffer]
+
+        y_min, y_max = min(y_coords), max(y_coords)
+        height = y_max - y_min
+        if height < 50:
+            self.clear_buffer()
+            return None
+
+        hit_idx = -1
+
+        for i in range(len(y_coords) - 1):
+            v_out = y_coords[i] - y_coords[i + 1]
+
+            if v_out > 0:
+                hit_idx = i
+                break
+        if hit_idx != -1 and len(self.tracking_buffer) < 5:
+            hit_idx = -1
+
+        if hit_idx != -1:
+            hit_tip = self.tracking_buffer[hit_idx]["tip"]
+            raw_hit = [float(hit_tip[0]), float(hit_tip[1])]
+
+            if self.target is not None and self._is_inside_target(raw_hit):
+                return {
+                    "point": raw_hit,
+                    "inside": True,
+                    "type": "INFLECTION_HIT",
+                    "h": height,
+                }
+            # 변곡점이 있지만 과녁 내부에서 검출 부족으로 찾지 못한경우
+            # hit_idx tip이랑 hit_idx+1 tip y를 직선으로 쭉이어서 과녁 내부면 point찍고 아니면 기존 로직
+
+            arrow1 = self.tracking_buffer[hit_idx]
+            arrow2 = self.tracking_buffer[hit_idx + 1]
+
+            p = self.intersect_line_point(
+                arrow1["tip"], arrow1["tail"], arrow2["tip"], arrow2["tail"]
+            )
+            if p and self._is_inside_target(p):
+                return {
+                    "point": p,
+                    "inside": True,
+                    "type": "INTERSECTION_INSIDE_TARGET",
+                    "h": height,
+                }
+
+            if self.target is not None:
+                closest_points = self._closest_point_on_polygon(raw_hit, self.target)
+                if closest_points:
+                    closest_x, closest_y = closest_points
+                    M = cv2.moments(self.target)
+                    if M["m00"] != 0:
+                        cx, cy = M["m10"] / M["m00"], M["m01"] / M["m00"]
+                        dx, dy = cx - closest_x, cy - closest_y
+                        length = np.sqrt(dx**2 + dy**2)
+
+                        if length > 0:
+                            dx, dy = dx / length, dy / length
+                            closest_x += dx * 35
+                            closest_y += dy * 35
+
+                    return {
+                        "point": [closest_x, closest_y],
+                        "inside": True,
+                        "type": "PROJECTED_TO_TARGET",
+                        "h": height,
+                    }
+                else:
+                    return {
+                        "point": raw_hit,
+                        "inside": False,
+                        "type": "NO_CLOSET_POINT",
+                        "h": height,
+                    }
+            else:
+                return {
+                    "point": raw_hit,
+                    "inside": False,
+                    "type": "NO_TARGET_INFO",
+                    "h": height,
+                }
+
+        else:  # 불관중
+            last_tip = self.tracking_buffer[-1]["tip"]
+            raw_hit = [float(last_tip[0]), float(last_tip[1])]
+            # 불관중인데 검출 부족으로 과녁 내부에 찍힌경우
+            if self.target is not None and self._is_inside_target(raw_hit):
+                target_bottom_y = max(p[1] for p in self.target)
+                raw_hit = [raw_hit[0], float(target_bottom_y + 10)]
+                return {
+                    "point": raw_hit,
+                    "inside": False,
+                    "type": "MISS_INSIDE_TARGET",
+                    "h": height,
+                }
+            if self.target is not None:
+                xs = [p[0] for p in self.target]
+                ys = [p[1] for p in self.target]
+
+                min_x, max_x = min(xs), max(xs)
+                min_y, max_y = min(ys), max(ys)
+
+                MARGIN = 50
+                min_x -= MARGIN
+                max_x += MARGIN
+                min_y -= MARGIN
+                max_y += MARGIN
+
+                clamped_x = min(max(raw_hit[0], min_x), max_x)
+                clamped_y = min(max(raw_hit[1], min_y), max_y)
+                clamped_hit = [clamped_x, clamped_y]
+                return {
+                    "point": clamped_hit,
+                    "inside": False,
+                    "type": "MISS_GENERAL",
+                    "h": height,
+                }
+
+            return {
+                "point": raw_hit,
+                "inside": False,
+                "type": "MISS_NO_TARGET",
+                "h": height,
+            }
+
+    def find_hit_point(self):
+        if not self.check_buffer_validity():
+            self.clear_buffer()
+            return None
+
+        y_coords = [data["tip"][1] for data in self.tracking_buffer]
 
         # 오탐 정지 물체 필터링
         y_min, y_max = min(y_coords), max(y_coords)
@@ -250,35 +387,27 @@ class ArrowService:
         # 적중하면 변곡점이 나온다.
         for i in range(len(y_coords) - 1):
             if y_coords[i + 1] < y_coords[i]:
-                x, y = self.tracking_buffer[i][0], self.tracking_buffer[i][1]
-                raw_hit = [float(x), float(y)]
+                hit_tip = self.tracking_buffer[i]["tip"]
+                raw_hit = [float(hit_tip[0]), float(hit_tip[1])]
 
                 if self.target is not None:
-                    inside = cv2.pointPolygonTest(self.target, raw_hit, False) >= 0
-
-                    if inside:
-                        return raw_hit
+                    if self._is_inside_target(raw_hit):
+                        return {"point": raw_hit, "inside": True}
 
                     for data in self.tracking_buffer:
-                        px, py = float(data[0]), float(data[1])
-                        if cv2.pointPolygonTest(self.target, [px, py], False) >= 0:
-
-                            return [px, py]
+                        if self._is_inside_target(data["tip"]):
+                            return {"point": list(data["tip"]), "inside": True}
 
                         closest_point = self._closest_point_on_polygon(
-                            [x, y], self.target
+                            raw_hit, self.target
                         )
-
                         if closest_point:
                             closest_x, closest_y = closest_point
 
                             M = cv2.moments(self.target)
                             if M["m00"] != 0:
-                                cx = M["m10"] / M["m00"]
-                                cy = M["m01"] / M["m00"]
-
-                                dx = cx - closest_x
-                                dy = cy - closest_y
+                                cx, cy = M["m10"] / M["m00"], M["m01"] / M["m00"]
+                                dx, dy = cx - closest_x, cy - closest_y
                                 length = np.sqrt(dx**2 + dy**2)
 
                                 if length > 0:
@@ -286,26 +415,22 @@ class ArrowService:
                                     closest_x += dx * 35
                                     closest_y += dy * 35
 
-                            return [closest_x, closest_y]
+                            return {"point": [closest_x, closest_y], "inside": True}
                         else:
-                            return [x, y]
+                            return {"point": raw_hit, "inside": False}
                 else:
-                    return [x, y]
+                    return {"point": raw_hit, "inside": False}
 
         # 변곡점 없는 경우 적중 X or 적중했지만 변곡점 감지 안되는 경우가 있다
-        x, y = self.tracking_buffer[-1][0], self.tracking_buffer[-1][1]
-        raw_hit = [float(x), float(y)]
+        last_tip = self.tracking_buffer[-1]["tip"]
+        raw_hit = [float(last_tip[0]), float(last_tip[1])]
 
         if self.target is None:
-            return raw_hit
+            return {"point": raw_hit, "inside": False}
 
-        inside = cv2.pointPolygonTest(self.target, raw_hit, False) >= 0
-
-        if inside:
-            return raw_hit
-
+        if self._is_inside_target(raw_hit):
+            return {"point": raw_hit, "inside": True}
         for data in self.tracking_buffer:
-            px, py = float(data[0]), float(data[1])
-            if cv2.pointPolygonTest(self.target, [px, py], False) >= 0:
-                return [px, py]
-        return raw_hit
+            if self._is_inside_target(data["tip"]):
+                return {"point": list(data["tip"]), "inside": True}
+        return {"point": raw_hit, "inside": False}
