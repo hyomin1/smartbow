@@ -156,7 +156,7 @@ export default function StreamingPage() {
                 {hit && polygon && renderRect && (
                   <AnimatePresence>
                     <motion.div
-                      key='overlay-bg'
+                     key={`overlay-bg-${hit.id}`}
                       className='absolute top-0 left-0 w-full h-full bg-black bg-opacity-80 z-10'
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -165,7 +165,7 @@ export default function StreamingPage() {
                     />
 
                     <motion.div
-                      key='overlay-popup'
+                      key={`overlay-popup-${hit.id}`} 
                       className='absolute top-0 left-0 w-full h-full z-20'
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}

@@ -8,7 +8,7 @@ export function useHit(message: WsMessage | null) {
     if (!message) return;
     if (message.type === 'hit') {
       const { tip, inside } = message;
-      setHit({ tip, inside });
+      setHit({ tip, inside,id:Date.now() });
     }
   }, [message]);
 
