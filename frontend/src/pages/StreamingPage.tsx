@@ -6,7 +6,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { useVideoSize } from '../hooks/useVideoSize';
 import { useHit } from '../hooks/useHit';
 import TargetOverlayView from '../components/TargetOverlayView';
-import useVisibility from '../hooks/useVisibility';
+//import useVisibility from '../hooks/useVisibility';
 import { getWebSocketStatus, isSystemOnline } from '../utils/webrtc';
 import StreamingHeader from '../components/StreamingHeader';
 import StreamingFooter from '../components/StreamingFooter';
@@ -38,7 +38,7 @@ export default function StreamingPage() {
   const renderRect = useVideoSize(targetVideoRef);
   const hit = useHit(message);
 
-  const isVisible = useVisibility();
+  const isVisible = true//useVisibility();
 
   const isDev = import.meta.env.VITE_ENV === 'dev';
 
@@ -79,7 +79,7 @@ export default function StreamingPage() {
   );
 
   if (hit) {
-    console.log(new Date(Date.now()).toLocaleString(), hit);
+    console.log(new Date(Date.now()).toLocaleString(), hit,'polygon',polygon,'renderRect',renderRect)
   }
 
   return (
@@ -180,7 +180,7 @@ export default function StreamingPage() {
                       />
                     </motion.div>
                   </AnimatePresence>
-                )}
+              )}q@    
               </div>
             </div>
           </div>
