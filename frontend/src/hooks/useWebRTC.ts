@@ -6,19 +6,17 @@ interface Props {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   onError?: (error: string) => void;
   onConnectionStateChange?: (state: RTCIceConnectionState) => void;
-  maxReconnectAttempts?: number;
   reconnectDelay?: number;
 }
 
-const DEFAULT_MAX_RECONNECT_ATTEMPTS = 3;
 const DEFAULT_RECONNECT_DELAY = 2000;
+const MAX_RECONNECT_DELAY = 15000;
 
 export function useWebRTC({
   camId,
   videoRef,
   onError,
   onConnectionStateChange,
-  maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS,
   reconnectDelay = DEFAULT_RECONNECT_DELAY,
 }: Props) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -38,6 +36,8 @@ export function useWebRTC({
     }
 
     if (pcRef.current) {
+      pcRef.current.oniceconnectionstatechange = null;
+      pcRef.current.ontrack = null;
       pcRef.current.close();
       pcRef.current = null;
     }
@@ -48,19 +48,31 @@ export function useWebRTC({
       videoRef.current.srcObject = null;
     }
   }, [videoRef]);
+  const scheduleReconnect = useCallback(
+    (reason: string) => {
+      if (isManualCloseRef.current) return;
+
+      reconnectAttemptsRef.current += 1;
+
+      const delay = Math.min(
+        reconnectDelay * reconnectAttemptsRef.current,
+        MAX_RECONNECT_DELAY
+      );
+
+      const msg = `${reason} (${delay / 1000}s 후 재시도)`;
+      setError(msg);
+      onError?.(msg);
+
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        connect();
+      }, delay);
+    },
+    [reconnectDelay, onError]
+  );
 
   const connect = useCallback(async () => {
     try {
       cleanup();
-
-      if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-        const errorMsg = `연결 실패: 최대 재시도 횟수(${maxReconnectAttempts}회) 초과`;
-        setError(errorMsg);
-        onError?.(errorMsg);
-        setIsConnecting(false);
-        return;
-      }
-
       setIsConnecting(true);
       setError(null);
 
@@ -91,19 +103,10 @@ export function useWebRTC({
           reconnectAttemptsRef.current = 0;
           setError(null);
           setIsConnecting(false);
-        } else if (state === 'failed' || state === 'disconnected') {
-          if (
-            !isManualCloseRef.current &&
-            reconnectAttemptsRef.current < maxReconnectAttempts
-          ) {
-            reconnectAttemptsRef.current += 1;
-            const delay = reconnectDelay * reconnectAttemptsRef.current;
-            setError(`연결 문제 - ${delay / 1000}초 후 재시도`);
-
-            reconnectTimeoutRef.current = setTimeout(() => {
-              connect();
-            }, delay);
-          }
+        }
+        if (state === 'failed' || state === 'disconnected') {
+          setIsConnecting(false);
+          scheduleReconnect('카메라 연결 대기 중');
         }
       };
 
@@ -112,18 +115,15 @@ export function useWebRTC({
 
         videoRef.current.srcObject = event.streams[0];
         videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().catch(() => {
-            const errorMsg = '비디오 재생 실패';
-            setError(errorMsg);
-            onError?.(errorMsg);
-          });
+          videoRef.current
+            ?.play()
+            .catch(() => scheduleReconnect('비디오 재생 실패'));
         };
       };
 
       pc.addTransceiver('video', { direction: 'recvonly' });
 
       const offer = await pc.createOffer();
-
       await pc.setLocalDescription(offer);
 
       const resp = await api.post(
@@ -142,29 +142,16 @@ export function useWebRTC({
 
       await pc.setRemoteDescription(answer);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '알 수 없는 오류';
-      setError(`연결 실패: ${errorMsg}`);
-      onError?.(`연결 실패: ${errorMsg}`);
       setIsConnecting(false);
-
-      if (
-        !isManualCloseRef.current &&
-        reconnectAttemptsRef.current < maxReconnectAttempts
-      ) {
-        reconnectAttemptsRef.current += 1;
-        const delay = reconnectDelay * reconnectAttemptsRef.current;
-
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connect();
-        }, delay);
-      }
+      scheduleReconnect(
+        err instanceof Error ? err.message : 'WebRTC 연결 실패'
+      );
     }
   }, [
     camId,
     videoRef,
     cleanup,
-    maxReconnectAttempts,
-    reconnectDelay,
+    scheduleReconnect,
     onError,
     onConnectionStateChange,
   ]);

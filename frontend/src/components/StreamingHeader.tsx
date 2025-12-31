@@ -62,7 +62,7 @@ export default function StreamingHeader({
             </motion.span>
             {retryCount > 0 && (
               <span className='text-yellow-400 font-mono text-xs'>
-                ({retryCount}/5)
+                (재시도 {retryCount})
               </span>
             )}
           </div>
@@ -111,7 +111,7 @@ export default function StreamingHeader({
                 {currentError}
               </span>
             </div>
-            {hasError && retryCount >= 5 && (
+            {hasError && (
               <button
                 onClick={onManualReconnect}
                 className='px-3 py-1 bg-red-600 hover:bg-red-700 text-white font-mono text-xs rounded transition-colors'

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { ClientMessage, WsMessage } from '../types/wsTypes';
 
-const MAX_RETRY_ATTEMPTS = 5;
 const INITIAL_RETRY_DELAY = 1000;
 const MAX_RETRY_DELAY = 30000;
 
@@ -37,12 +36,6 @@ export function useWebSocket(camId: string) {
       oldWs.close();
     }
 
-    if (reconnectAttemptRef.current >= MAX_RETRY_ATTEMPTS) {
-      setError(`연결 실패: 최대 재시도 횟수(${MAX_RETRY_ATTEMPTS}회) 초과`);
-      setReadyState(WebSocket.CLOSED);
-      return;
-    }
-
     try {
       isConnectingRef.current = true;
       const url = `${import.meta.env.VITE_WEBSOCKET_URL}hit/${camId}`;
@@ -68,13 +61,13 @@ export function useWebSocket(camId: string) {
       };
 
       ws.onerror = () => {
-        isConnectingRef.current = false;
         setError('WebSocket 연결 오류');
       };
 
       ws.onclose = (event) => {
         isConnectingRef.current = false;
-        console.log('❌ WebSocket 종료', {
+
+        console.log('WebSocket 종료', {
           code: event.code,
           reason: event.reason,
           isManual: isManualCloseRef.current,
@@ -82,22 +75,19 @@ export function useWebSocket(camId: string) {
         });
 
         setReadyState(WebSocket.CLOSED);
-
-        if (
-          !isManualCloseRef.current &&
-          reconnectAttemptRef.current < MAX_RETRY_ATTEMPTS
-        ) {
+        if (!isManualCloseRef.current) {
           reconnectAttemptRef.current += 1;
           setRetryCount(reconnectAttemptRef.current);
 
           const delay = Math.min(
-            INITIAL_RETRY_DELAY * 2 ** (reconnectAttemptRef.current - 1),
+            INITIAL_RETRY_DELAY *
+              2 ** Math.min(reconnectAttemptRef.current - 1, 5),
             MAX_RETRY_DELAY
           );
 
-          setError(`연결 끊김 (${delay / 1000}초 후 재시도)`);
+          setError(`서버 대기 중... (${delay / 1000}초 후 재시도)`);
 
-          retryTimeoutRef.current = setTimeout(() => {
+          retryTimeoutRef.current = window.setTimeout(() => {
             connect();
           }, delay);
         }

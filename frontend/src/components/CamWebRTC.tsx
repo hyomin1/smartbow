@@ -5,8 +5,7 @@ interface Props {
   cover?: boolean;
   onError?: (error: string) => void;
   onConnectionStateChange?: (state: RTCIceConnectionState) => void;
-  maxReconnectAttempts?: number;
-  reconnectDelay?: number;
+
   videoRef: React.RefObject<HTMLVideoElement | null>;
 }
 
@@ -15,8 +14,8 @@ export default function CamWebRTC({
   cover,
   onError,
   onConnectionStateChange,
-  maxReconnectAttempts,
-  reconnectDelay,
+ 
+ 
   videoRef,
 }: Props) {
   const { connectionState, error, isConnecting } = useWebRTC({
@@ -24,8 +23,8 @@ export default function CamWebRTC({
     videoRef,
     onError,
     onConnectionStateChange,
-    maxReconnectAttempts,
-    reconnectDelay,
+
+ 
   });
 
   const getStateLabel = () => {
