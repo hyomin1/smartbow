@@ -20,9 +20,9 @@ export default function StreamingHeader({
   targetCamState,
   shooterCamState,
   camId,
-  hasError,
-  currentError,
-  onManualReconnect,
+    //hasError,
+  //currentError,
+  //onManualReconnect,
 }: Props) {
   return (
     <motion.div
