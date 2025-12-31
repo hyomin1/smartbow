@@ -180,7 +180,7 @@ export default function StreamingPage() {
                       />
                     </motion.div>
                   </AnimatePresence>
-              )}q@    
+              )}
               </div>
             </div>
           </div>

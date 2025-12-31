@@ -98,7 +98,7 @@ export default function StreamingHeader({
         </div>
       </div>
 
-      {hasError && (
+      {/* {hasError && (
         <motion.div
           className='absolute top-full left-0 right-0 bg-red-900 bg-opacity-90 border-b border-red-500 px-6 py-2'
           initial={{ opacity: 0, y: -20 }}
@@ -121,7 +121,7 @@ export default function StreamingHeader({
             )}
           </div>
         </motion.div>
-      )}
+      )} */}
     </motion.div>
   );
 }
