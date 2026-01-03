@@ -1,18 +1,20 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import asyncio
+import logging.config
+import os
+import threading
+import time
 from contextlib import asynccontextmanager
-
-from subscriber import start_subscriber_thread
-from config import ARROW_INFER_CONFIG, PERSON_INFER_CONFIG, ALLOW_ORIGINS, LOG_DIR
-from services.arrow.registry import arrow_registry
-from services.person.registry import person_registry
-from routers import webrtc, ws, auth, user
 from datetime import datetime
 
-
-import time, threading, asyncio
-import logging.config, yaml
-import os
+import yaml
+from config import ALLOW_ORIGINS, ARROW_INFER_CONFIG, LOG_DIR, PERSON_INFER_CONFIG
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routers import auth, user, webrtc, ws
+from services.arrow.registry import arrow_registry
+from services.person.registry import person_registry
+from subscriber import start_subscriber_thread
+from utils.zmq_utils import get_req_socket
 
 os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -28,19 +30,24 @@ except FileNotFoundError:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
-except Exception as e:
+except Exception:
     logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger("smartbow")
 
 
 def on_arrow_event(cam_id, event):
+    # logger.info(f"DEBUG: [화살 이벤트 수신] 카메라: {cam_id}, 데이터: {event}")
     arrow_service = arrow_registry.get(cam_id)
     if arrow_service is None:
         logger.warning(f"화살 서비스를 찾을 수 없음 - 카메라 ID: {cam_id}")
         return
 
-    arrow_service.add_event(event)
+    event_type = event.get("type")
+
+    if event_type == "arrow":
+        arrow_service.add_event(event)
+        return
 
 
 def on_person_event(cam_id, event):
@@ -48,7 +55,7 @@ def on_person_event(cam_id, event):
     if person_service is None:
         logger.warning(f"사람 감지 서비스를 찾을 수 없음 - 카메라 ID: {cam_id}")
         return
-    person_service.update_detections(event["persons"])
+    person_service.update_detections(event["person"])
 
 
 def idle_watcher():
@@ -63,20 +70,31 @@ def idle_watcher():
             for cam_id, arrow_service in list(arrow_registry.items()):
                 try:
                     if arrow_service.is_idle():
-                        hit = arrow_service.find_hit_point()
+                        hit = arrow_service.new_find_hit_point()
                         if hit is not None:
-
+                            logger.info(
+                                f"🎯 [HIT 발견] 카메라: {cam_id}, 좌표: {hit['point']}, 과녁 안: {hit['inside']}"
+                            )
                             arrow_service.last_hit_time = time.time()
 
                             try:
-                                arrow_service.visualize_buffer(hit)
+                                arrow_service.visualize_buffer(
+                                    hit["point"], hit["type"], hit["h"]
+                                )
                             except Exception as e:
                                 logger.error(
                                     f"버퍼 시각화 실패 - 카메라: {cam_id}, 오류: {e}"
                                 )
 
                             loop.run_until_complete(
-                                ws.broadcast(cam_id, {"type": "hit", "tip": hit})
+                                ws.broadcast(
+                                    cam_id,
+                                    {
+                                        "type": "hit",
+                                        "tip": hit["point"],
+                                        "inside": hit["inside"],
+                                    },
+                                )
                             )
 
                         arrow_service.clear_buffer()
@@ -101,22 +119,41 @@ async def lifespan(app: FastAPI):
     logger.info(f"화살 추론 서비스 초기화 시작 (총 {len(ARROW_INFER_CONFIG)} 개)")
     for cam_key, config in ARROW_INFER_CONFIG.items():
         cam_id = config["id"]
-        port = config["infer_port"]
+        ipc_name = config["infer_port"]
 
         try:
-            logger.info(f"  → 카메라 연결 시도: {cam_id} (포트: {port})")
-            start_subscriber_thread(port, cam_id, on_arrow_event)
+            logger.info(f"  → 카메라 연결 시도: {cam_id} (식별자: {ipc_name})")
+            start_subscriber_thread(ipc_name, cam_id, on_arrow_event)
             logger.info(f"  ✓ 카메라 연결 성공: {cam_id}")
         except Exception as e:
             logger.error(f"  ✗ 카메라 연결 실패: {cam_id} - {e}")
 
+    for cam_key, config in ARROW_INFER_CONFIG.items():
+        cam_id = config["id"]
+        target_port = config["target_port"]
+
+        while True:
+            try:
+                req = get_req_socket(target_port)
+                req.send_json({"type": "get_target"})
+                resp = req.recv_json()
+
+                arrow_service = arrow_registry.get(cam_id)
+                arrow_service.set_target(
+                    target=resp["target"], frame_size=resp["frame_size"]
+                )
+                break
+            except Exception as e:
+                logger.error(f"[{cam_id}] 과녁 영역 초기화 실패 {e}")
+                time.sleep(60)
+
     logger.info(f"사람 감지 서비스 초기화 시작 (총 {len(PERSON_INFER_CONFIG)}개)")
     for cam_key, config in PERSON_INFER_CONFIG.items():
         cam_id = config["id"]
-        port = config["infer_port"]
+        ipc_name = config["infer_port"]
         try:
-            logger.info(f"  → 카메라 연결 시도: {cam_id} (포트: {port})")
-            start_subscriber_thread(port, cam_id, on_person_event)
+            logger.info(f"  → 카메라 연결 시도: {cam_id} (식별자: {ipc_name})")
+            start_subscriber_thread(ipc_name, cam_id, on_person_event)
             logger.info(f"  ✓ 카메라 연결 성공: {cam_id}")
         except Exception as e:
             logger.error(f"  ✗ 카메라 연결 실패: {cam_id} - {e}")
@@ -152,8 +189,7 @@ app.add_middleware(
 app.include_router(webrtc.router, prefix="/webrtc", tags=["webrtc"])
 app.include_router(ws.router, prefix="/ws", tags=["ws"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(user.router, prefix='/user', tags=['user'])
-
+app.include_router(user.router, prefix="/user", tags=["user"])
 
 
 @app.get("/")

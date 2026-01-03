@@ -1,8 +1,8 @@
-from fastapi import APIRouter, WebSocket
-from starlette.websockets import WebSocketDisconnect
-from services.arrow.registry import arrow_registry
-
 import logging
+
+from fastapi import APIRouter, WebSocket
+from services.arrow.registry import arrow_registry
+from starlette.websockets import WebSocketDisconnect
 
 logger = logging.getLogger("smartbow.ws")
 
@@ -13,7 +13,6 @@ connected_clients: dict[str, dict[WebSocket, dict]] = {}
 
 async def broadcast(cam_id: str, event: dict):
     try:
-
         clients = connected_clients.get(cam_id, {})
         if not clients:
             return
@@ -27,6 +26,7 @@ async def broadcast(cam_id: str, event: dict):
             logger.warning(f"브로드캐스트 실패: ArrowService 없음 - 카메라: {cam_id}")
             return
         raw_x, raw_y = event["tip"]
+        inside = event.get("inside", False)
 
         disconnected = []
 
@@ -38,11 +38,11 @@ async def broadcast(cam_id: str, event: dict):
 
             render_tip = arrow_service.to_render_coords(raw_x, raw_y, video_size)
 
-            payload = {"type": "hit", "tip": render_tip}
+            payload = {"type": "hit", "tip": render_tip, "inside": inside}
 
             try:
                 await ws.send_json(payload)
-            except Exception:
+            except Exception as e:
                 logger.error(f"클라이언트 전송 실패 - 카메라: {cam_id}, 오류: {e}")
                 disconnected.append(ws)
 
@@ -56,7 +56,6 @@ async def broadcast(cam_id: str, event: dict):
 
 async def send_polygon(ws: WebSocket, cam_id: str, video_size=None):
     try:
-
         arrow_service = arrow_registry.get(cam_id)
         if arrow_service is None:
             logger.warning(f"폴리곤 전송 실패: ArrowService 없음 - 카메라: {cam_id}")

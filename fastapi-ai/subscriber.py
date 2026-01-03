@@ -21,6 +21,7 @@ def start_subscriber_thread(ipc_name, cam_id, callback):
         while True:
             try:
                 event = socket.recv_json()
+
                 callback(cam_id, event)
             except Exception as e:
                 print(f"[SUB] Error({cam_id}):", e)

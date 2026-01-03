@@ -15,9 +15,22 @@ class ArrowTracker:
     def reset(self):
         self.initialized = False
 
-    def step(self, bbox, line=None):
-        bx1, by1, bx2, by2 = map(float, bbox)
-        cx, cy = (bx1 + bx2) / 2, (by1 + by2) / 2
+    def step(self, bbox, line):
+        if bbox is None and line is None:
+            return None
+
+        if bbox is not None:
+            bx1, by1, bx2, by2 = map(float, bbox)
+            cx, cy = (bx1 + bx2) / 2, (by1 + by2) / 2
+        else:
+            lx1, ly1, lx2, ly2 = map(float, line)
+            bx1, by1, bx2, by2 = (
+                min(lx1, lx2),
+                min(ly1, ly2),
+                max(lx1, lx2),
+                max(ly1, ly2),
+            )
+            cx, cy = (bx1 + bx2) / 2, (by1 + by2) / 2
 
         if not self.initialized:
             self.kf.statePost = np.array([[cx], [cy], [0], [0]], np.float32)

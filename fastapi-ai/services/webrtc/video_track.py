@@ -2,6 +2,7 @@ import asyncio
 import time
 
 import cv2
+import numpy as np
 from aiortc import VideoStreamTrack
 from av import VideoFrame
 
@@ -48,15 +49,31 @@ class CameraVideoTrack(VideoStreamTrack):
 
         person = self.person_service.get_detection()
 
+        target = self.arrow_service.target
+
+        if target is not None:
+            # target: np.ndarray shape (4, 2) or list[[x,y],...]
+            pts = np.array(target, dtype=np.int32).reshape((-1, 1, 2))
+
+            # 외곽선
+            cv2.polylines(
+                processed_frame,
+                [pts],
+                isClosed=True,
+                color=(0, 255, 255),  # 노란색
+                thickness=2,
+                lineType=cv2.LINE_AA,
+            )
+
         if person:
             x1, y1, x2, y2 = map(int, person["bbox"])
-            conf = person["conf"]
+
             cv2.rectangle(
                 processed_frame, (x1, y1), (x2, y2), (255, 0, 0), 2, cv2.LINE_AA
             )
             cv2.putText(
                 processed_frame,
-                f"{conf:.2f}",
+                f"{person['conf']}",
                 (x1, y1 - 5),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.9,

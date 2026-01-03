@@ -17,6 +17,7 @@ class PersonService:
 
         if time.time() - self.last_timestamp > self.timeout:
             self.person = None
+
             return None
 
         return self.person
