@@ -1,10 +1,10 @@
 type PolygonMessage = {
-  type: 'polygon';
+  type: "polygon";
   points: number[][];
 };
 
 export type HitMessage = {
-  type: 'hit';
+  type: "hit";
   tip: [number, number];
   inside: boolean;
 };
@@ -15,10 +15,14 @@ export type Hit = {
   id: number;
 };
 
+export type HitLog = Omit<Hit, "tip"> & {
+  ts: number;
+};
+
 export type WsMessage = PolygonMessage | HitMessage;
 
 type VideoSizeMessage = {
-  type: 'video_size';
+  type: "video_size";
   width: number;
   height: number;
 };

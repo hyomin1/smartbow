@@ -12,7 +12,7 @@ interface Props {
 
 export default function TargetCard({ target }: Props) {
   const { id, name } = target;
-  const isOnline = name === '3관';
+  const isOnline = name === '3관' || 'test';
 
   return (
     <Link

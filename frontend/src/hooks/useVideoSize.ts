@@ -1,15 +1,16 @@
-import { useLayoutEffect, useState, useRef } from 'react';
+import { useLayoutEffect, useState, useRef } from "react";
 
 export function useVideoSize(ref: React.RefObject<HTMLVideoElement | null>) {
   const [rect, setRect] = useState<{ w: number; h: number } | null>(null);
   const timeoutRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
-    if (!ref.current) return;
+    const video = ref.current;
+    if (!video) return;
 
     const update = () => {
-      if (!ref.current) return;
-      const r = ref.current.getBoundingClientRect();
+      if (video.videoWidth === 0 || video.videoHeight === 0) return;
+      const r = video.getBoundingClientRect();
 
       setRect((prev) => {
         if (prev && prev.w === r.width && prev.h === r.height) {
@@ -27,10 +28,14 @@ export function useVideoSize(ref: React.RefObject<HTMLVideoElement | null>) {
     };
 
     update();
-    window.addEventListener('resize', debouncedUpdate);
+    video.addEventListener("loadedmetadata", update);
+    video.addEventListener("playing", update);
+    window.addEventListener("resize", debouncedUpdate);
 
     return () => {
-      window.removeEventListener('resize', debouncedUpdate);
+      window.removeEventListener("resize", debouncedUpdate);
+      video.removeEventListener("loadedmetadata", update);
+      video.removeEventListener("playing", update);
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
