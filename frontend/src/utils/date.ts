@@ -13,3 +13,9 @@ export function formatTime(ts: number) {
 
   return ts ? `${h}시 ${m}분 ${s}초` : `${h}:${m}`;
 }
+
+export function formatShortTime(date = new Date()) {
+  const h = String(date.getHours()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
