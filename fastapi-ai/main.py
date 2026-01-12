@@ -10,9 +10,10 @@ import yaml
 from config import ALLOW_ORIGINS, ARROW_INFER_CONFIG, LOG_DIR, PERSON_INFER_CONFIG
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, user, webrtc, ws
+from routers import auth, user, weather, webrtc, ws
 from services.arrow.registry import arrow_registry
 from services.person.registry import person_registry
+from services.weather.service import weather_loop
 from subscriber import start_subscriber_thread
 from utils.zmq_utils import get_req_socket
 
@@ -158,6 +159,10 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"  ✗ 카메라 연결 실패: {cam_id} - {e}")
 
+    weather_thread = threading.Thread(target=weather_loop, daemon=True)
+    weather_thread.start()
+    logger.info("날씨 백그라운드 워커 시작")
+
     t = threading.Thread(target=idle_watcher, daemon=True)
     t.start()
     logger.info("백그라운드 워커 시작 완료")
@@ -190,6 +195,7 @@ app.include_router(webrtc.router, prefix="/webrtc", tags=["webrtc"])
 app.include_router(ws.router, prefix="/ws", tags=["ws"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(user.router, prefix="/user", tags=["user"])
+app.include_router(weather.router, prefix="/weather", tags=["weather"])
 
 
 @app.get("/")

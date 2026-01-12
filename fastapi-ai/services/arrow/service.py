@@ -90,7 +90,7 @@ class ArrowService:
                 logger.debug("판정중 버퍼 추가 스킵")
                 return
         arrow_data = self.tracker.step(event.get("bbox"), event.get("motion_line"))
-        if not arrow_data:
+        if arrow_data is None:
             return
         tip = arrow_data["tip"]
         tail = arrow_data["tail"]
@@ -119,62 +119,71 @@ class ArrowService:
             return
 
         vis_frame = self.last_frame.copy()
-
-        if reason and height:
-            cv2.putText(
-                vis_frame,
-                f"HIT TYPE: {reason} HEIGHT: ({height})",
-                (20, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                (0, 0, 255),  # 아무 색이나
-                2,
-                cv2.LINE_AA,
-            )
+        num_points = len(self.tracking_buffer)
+        overlay = vis_frame.copy()
+        cv2.rectangle(overlay, (10, 10), (450, 60), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.6, vis_frame, 0.4, 0, vis_frame)
+        cv2.putText(
+            vis_frame,
+            f"HIT: {reason} | H: {height:.2f} | Pts: {num_points}",
+            (20, 45),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 255, 255),
+            2,
+        )
 
         for i, data in enumerate(self.tracking_buffer):
-            tip = data["tip"]
-            tail = data["tail"]
-            case = data["case"]
+            tip = (int(data["tip"][0]), int(data["tip"][1]))
+            tail = (int(data["tail"][0]), int(data["tail"][1]))
+            case = data.get("case", "?")
 
-            alpha = (i + 1) / len(self.tracking_buffer)
-            color = (0, int(255 * alpha), int(255 * (1 - alpha)))
+            # 1. 그라데이션 색상 (진한 파랑 -> 진한 빨강)
+            alpha = (i + 1) / num_points
+            color = (int(255 * (1 - alpha)), 0, int(255 * alpha))
 
-            cv2.line(
-                vis_frame,
-                (int(tail[0]), int(tail[1])),
-                (int(tip[0]), int(tip[1])),
-                color,
-                1,
-                cv2.LINE_8,
-            )
-            cv2.circle(vis_frame, (int(tip[0]), int(tip[1])), 3, (0, 0, 255), -1)
+            # 2. 화살 궤적 선 (얇게 하여 겹쳐도 보이게 함)
+            cv2.line(vis_frame, tail, tip, color, 1, cv2.LINE_AA)
+            cv2.circle(vis_frame, tip, 2, color, -1)
 
+            # 3. [핵심] 텍스트 분산 배치 (박힌 지점에서 번호가 펴지도록)
+            # 인덱스 번호에 따라 텍스트를 나선형 또는 계단형으로 배치
+            angle = (i / num_points) * 2 * np.pi  # 360도 분산
+            radius = 30 + (i * 2)  # 뒤로 갈수록 멀어지게 하여 겹침 방지
+
+            tx = int(tip[0] + radius * np.cos(angle))
+            ty = int(tip[1] + radius * np.sin(angle))
+
+            # 팁에서 번호까지 얇은 지시선 연결
+            cv2.line(vis_frame, tip, (tx, ty), (200, 200, 200), 1, cv2.LINE_4)
+
+            label = f"{i}:{case}"
             cv2.putText(
                 vis_frame,
-                f"{i} {case}",
-                (int(tip[0]) + 6, int(tip[1]) - 6),
+                label,
+                (tx, ty),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
+                0.4,
                 color,
                 1,
                 cv2.LINE_AA,
             )
 
-            if hit_point:
-                hx, hy = int(hit_point[0]), int(hit_point[1])
-                cv2.drawMarker(
-                    vis_frame, (hx, hy), (0, 0, 255), cv2.MARKER_TILTED_CROSS, 25, 3
-                )
-                cv2.putText(
-                    vis_frame,
-                    f"HIT ({hx},{hy})",
-                    (hx + 10, hy - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0, 0, 255),
-                    2,
-                )
+        # 4. 최종 적중 지점 강조
+        if hit_point:
+            hx, hy = int(hit_point[0]), int(hit_point[1])
+            cv2.drawMarker(
+                vis_frame, (hx, hy), (0, 255, 0), cv2.MARKER_TILTED_CROSS, 20, 2
+            )
+            cv2.putText(
+                vis_frame,
+                "FINAL HIT",
+                (hx + 10, hy + 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 0),
+                2,
+            )
 
             now = datetime.datetime.now()
             save_dir = os.path.join(BASE_DIR, now.strftime("%Y-%m-%d"))
@@ -262,7 +271,8 @@ class ArrowService:
             if v_out > 0:
                 hit_idx = i
                 break
-        if hit_idx != -1 and len(self.tracking_buffer) < 5:
+        # 변곡점 있는데 버퍼안에 개수 적은경우 실제 화살팅기는게 아님
+        if hit_idx != -1 and len(self.tracking_buffer) < 7:
             hit_idx = -1
 
         if hit_idx != -1:
@@ -290,19 +300,19 @@ class ArrowService:
             # 변곡점이 있지만 과녁 내부에서 검출 부족으로 찾지 못한경우
             # hit_idx tip이랑 hit_idx+1 tip y를 직선으로 쭉이어서 과녁 내부면 point찍고 아니면 기존 로직
 
-            arrow1 = self.tracking_buffer[hit_idx]
-            arrow2 = self.tracking_buffer[hit_idx + 1]
+            # arrow1 = self.tracking_buffer[hit_idx]
+            # arrow2 = self.tracking_buffer[hit_idx + 1]
 
-            p = self.intersect_line_point(
-                arrow1["tip"], arrow1["tail"], arrow2["tip"], arrow2["tail"]
-            )
-            if p and self._is_inside_target(p):
-                return {
-                    "point": p,
-                    "inside": True,
-                    "type": "INTERSECTION_INSIDE_TARGET",
-                    "h": height,
-                }
+            # p = self.intersect_line_point(
+            #     arrow1["tip"], arrow1["tail"], arrow2["tip"], arrow2["tail"]
+            # )
+            # if p and self._is_inside_target(p):
+            #     return {
+            #         "point": p,
+            #         "inside": True,
+            #         "type": "INTERSECTION_INSIDE_TARGET",
+            #         "h": height,
+            #     }
 
             if self.target is not None:
                 closest_points = self._closest_point_on_polygon(raw_hit, self.target)
