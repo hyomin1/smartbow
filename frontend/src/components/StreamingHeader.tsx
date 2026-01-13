@@ -31,7 +31,7 @@ export default function StreamingHeader({ status }: Props) {
           )}
         </div>
 
-        <div className="flex items-center gap-3 font-bold">
+        <div className="flex items-center gap-1 text-xs font-bold text-nowrap sm:gap-3 sm:text-lg">
           <div className="flex items-center gap-1.5">
             <span className="text-stone-400">{name}관</span>
             <span

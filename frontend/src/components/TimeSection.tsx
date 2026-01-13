@@ -25,12 +25,12 @@ export default function TimeSection() {
   }, []);
 
   return (
-    <div className="mr-4 flex items-center gap-4 border-r-2 border-stone-700 pr-6">
-      <span className="text-2xl font-black tracking-tight text-stone-300">
+    <div className="flex items-center gap-4 border-stone-700 pr-6 sm:mr-4 sm:border-r-2">
+      <span className="text-xs font-black tracking-tight text-nowrap text-stone-300 sm:text-2xl">
         {timeStr.date}
       </span>
 
-      <span className="text-4xl font-black tracking-tighter text-white">
+      <span className="hidden text-4xl font-black tracking-tighter text-white sm:inline">
         {timeStr.time}
       </span>
     </div>
