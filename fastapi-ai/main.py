@@ -50,6 +50,10 @@ def on_arrow_event(cam_id, event):
         arrow_service.add_event(event)
         return
 
+    elif event_type == "splash":
+        arrow_service.add_splash_event(event)
+        return
+
 
 def on_person_event(cam_id, event):
     person_service = person_registry.get(cam_id)
@@ -71,7 +75,7 @@ def idle_watcher():
             for cam_id, arrow_service in list(arrow_registry.items()):
                 try:
                     if arrow_service.is_idle():
-                        hit = arrow_service.new_find_hit_point()
+                        hit = arrow_service.find_hit_point()
                         if hit is not None:
                             logger.info(
                                 f"🎯 [HIT 발견] 카메라: {cam_id}, 좌표: {hit['point']}, 과녁 안: {hit['inside']}"

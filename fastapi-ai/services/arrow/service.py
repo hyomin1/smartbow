@@ -8,15 +8,13 @@ import cv2
 import numpy as np
 from config import BASE_DIR
 
-from services.arrow.tracker import ArrowTracker
-
 logger = logging.getLogger("smartbow.arrow")
 
 
 class ArrowService:
     def __init__(self, buffer_size=50, idle_sec=2.0, cooldown_sec=8.0):
-        self.tracking_buffer = deque(maxlen=buffer_size)
-        self.tracker = ArrowTracker()
+        self.tracking_buffer = deque(maxlen=buffer_size)  # 화살 데이터
+        self.splash_buffer = deque(maxlen=10)  # 모래 튀기는 데이터
 
         self.idle_sec = idle_sec
         self.cooldown_sec = cooldown_sec
@@ -28,6 +26,7 @@ class ArrowService:
         self.last_frame = None  # 화살 위치 디버그용 추후 서비스 안정화되면 제거
 
         self.current_arrow = None
+        self.current_splash = None
 
     def set_target(self, target, frame_size):
         self.target = np.array(target, dtype=np.int32)
@@ -64,15 +63,7 @@ class ArrowService:
         return cv2.pointPolygonTest(self.target, point, False) >= 0
 
     def check_buffer_validity(self):
-        if len(self.tracking_buffer) < 2:
-            return False
-        cases = [data.get("case") for data in self.tracking_buffer]
-
-        # 버퍼에 모두 직선만 검출된 경우
-        if all(c == "C" for c in cases):
-            return False
-
-        return True
+        return len(self.tracking_buffer) >= 2
 
     def is_point_in_rect(self, point, rect):
         if point is None:
@@ -89,100 +80,103 @@ class ArrowService:
             if time.time() - self.last_hit_time < self.cooldown_sec:
                 logger.debug("판정중 버퍼 추가 스킵")
                 return
-        arrow_data = self.tracker.step(event.get("bbox"), event.get("motion_line"))
-        if arrow_data is None:
-            return
-        tip = arrow_data["tip"]
-        tail = arrow_data["tail"]
 
-        IGNORE_RECT = (640, 280, 700, 410)
-        if self.is_point_in_rect(tip, IGNORE_RECT) or self.is_point_in_rect(
-            tail, IGNORE_RECT
-        ):
-            return
+        tip = event.get("tip")
+        tail = event.get("tail")
+        conf = event.get("bbox_conf")
 
-        self.current_arrow = {"tip": arrow_data["tip"], "tail": arrow_data["tail"]}
+        self.current_arrow = {"tip": tip, "tail": tail}
 
         self.tracking_buffer.append(
             {
                 "tip": tip,
                 "tail": tail,
+                "conf": conf,
                 "timestamp": event["timestamp"],
-                "case": event["case"],
             }
         )
 
         self.last_event_time = time.time()
 
+    def add_splash_event(self, event):
+        if event["type"] != "splash":
+            return
+
+        if self.last_hit_time > 0:
+            if time.time() - self.last_hit_time < self.cooldown_sec:
+                logger.debug("판정중 버퍼 추가 스킵")
+                return
+        self.current_splash = event["splash_bbox"]
+
+        self.splash_buffer.append(event["splash_bbox"])
+        self.last_event_time = time.time()
+
     def visualize_buffer(self, hit_point, reason, height):
-        if not self.tracking_buffer or self.last_frame is None:
+        if self.last_frame is None:
+            return
+
+        if not self.tracking_buffer and not self.splash_buffer:
             return
 
         vis_frame = self.last_frame.copy()
         num_points = len(self.tracking_buffer)
-        overlay = vis_frame.copy()
-        cv2.rectangle(overlay, (10, 10), (450, 60), (0, 0, 0), -1)
-        cv2.addWeighted(overlay, 0.6, vis_frame, 0.4, 0, vis_frame)
-        cv2.putText(
-            vis_frame,
-            f"HIT: {reason} | H: {height:.2f} | Pts: {num_points}",
-            (20, 45),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 255, 255),
-            2,
-        )
-
-        for i, data in enumerate(self.tracking_buffer):
-            tip = (int(data["tip"][0]), int(data["tip"][1]))
-            tail = (int(data["tail"][0]), int(data["tail"][1]))
-            case = data.get("case", "?")
-
-            # 1. 그라데이션 색상 (진한 파랑 -> 진한 빨강)
-            alpha = (i + 1) / num_points
-            color = (int(255 * (1 - alpha)), 0, int(255 * alpha))
-
-            # 2. 화살 궤적 선 (얇게 하여 겹쳐도 보이게 함)
-            cv2.line(vis_frame, tail, tip, color, 1, cv2.LINE_AA)
-            cv2.circle(vis_frame, tip, 2, color, -1)
-
-            # 3. [핵심] 텍스트 분산 배치 (박힌 지점에서 번호가 펴지도록)
-            # 인덱스 번호에 따라 텍스트를 나선형 또는 계단형으로 배치
-            angle = (i / num_points) * 2 * np.pi  # 360도 분산
-            radius = 30 + (i * 2)  # 뒤로 갈수록 멀어지게 하여 겹침 방지
-
-            tx = int(tip[0] + radius * np.cos(angle))
-            ty = int(tip[1] + radius * np.sin(angle))
-
-            # 팁에서 번호까지 얇은 지시선 연결
-            cv2.line(vis_frame, tip, (tx, ty), (200, 200, 200), 1, cv2.LINE_4)
-
-            label = f"{i}:{case}"
+        if num_points > 0:
+            overlay = vis_frame.copy()
+            cv2.rectangle(overlay, (10, 10), (450, 60), (0, 0, 0), -1)
+            cv2.addWeighted(overlay, 0.6, vis_frame, 0.4, 0, vis_frame)
             cv2.putText(
                 vis_frame,
-                label,
-                (tx, ty),
+                f"HIT: {reason} | H: {height:.2f} | Pts: {num_points}",
+                (20, 45),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.4,
-                color,
-                1,
-                cv2.LINE_AA,
+                0.8,
+                (255, 255, 255),
+                2,
             )
+
+            for i, data in enumerate(self.tracking_buffer):
+                tip = (int(data["tip"][0]), int(data["tip"][1]))
+                tail = (int(data["tail"][0]), int(data["tail"][1]))
+
+                conf = data.get("conf", "?")
+
+                # 1. 그라데이션 색상 (진한 파랑 -> 진한 빨강)
+                alpha = (i + 1) / num_points
+                color = (int(255 * (1 - alpha)), 0, int(255 * alpha))
+
+                # 2. 화살 궤적 선 (얇게 하여 겹쳐도 보이게 함)
+                cv2.line(vis_frame, tail, tip, color, 1, cv2.LINE_AA)
+                cv2.circle(vis_frame, tip, 2, color, -1)
+
+                # 3. [핵심] 텍스트 분산 배치 (박힌 지점에서 번호가 펴지도록)
+                # 인덱스 번호에 따라 텍스트를 나선형 또는 계단형으로 배치
+                angle = (i / num_points) * 2 * np.pi  # 360도 분산
+                radius = 30 + (i * 2)  # 뒤로 갈수록 멀어지게 하여 겹침 방지
+
+                tx = int(tip[0] + radius * np.cos(angle))
+                ty = int(tip[1] + radius * np.sin(angle))
+
+                # 팁에서 번호까지 얇은 지시선 연결
+                cv2.line(vis_frame, tip, (tx, ty), (200, 200, 200), 1, cv2.LINE_4)
+
+                # label = f"{i}:{case}"
+                label = f"{i} conf:{conf}"
+                cv2.putText(
+                    vis_frame,
+                    label,
+                    (tx, ty),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    color,
+                    1,
+                    cv2.LINE_AA,
+                )
 
         # 4. 최종 적중 지점 강조
         if hit_point:
             hx, hy = int(hit_point[0]), int(hit_point[1])
             cv2.drawMarker(
                 vis_frame, (hx, hy), (0, 255, 0), cv2.MARKER_TILTED_CROSS, 20, 2
-            )
-            cv2.putText(
-                vis_frame,
-                "FINAL HIT",
-                (hx + 10, hy + 25),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 255, 0),
-                2,
             )
 
             now = datetime.datetime.now()
@@ -193,19 +187,23 @@ class ArrowService:
             )
 
     def is_idle(self):
-        if not self.tracking_buffer or self.last_event_time is None:
+        if not self.tracking_buffer and not self.splash_buffer:
+            return False
+
+        if self.last_event_time is None:
             return False
         now = time.time()
         if now - self.last_event_time > 0.5:
             self.current_arrow = None
+            self.current_splash = None
         if now - self.last_hit_time < self.cooldown_sec:
             return False
 
-        return time.time() - self.last_event_time > self.idle_sec
+        return now - self.last_event_time > self.idle_sec
 
     def clear_buffer(self):
         self.tracking_buffer.clear()
-        self.tracker.reset()
+        self.splash_buffer.clear()
 
     def _closest_point_on_polygon(self, point, polygon):
         px, py = point
@@ -235,23 +233,23 @@ class ArrowService:
 
         return closest_point
 
-    def intersect_line_point(self, p1, p2, q1, q2):
-        x1, y1 = p1
-        x2, y2 = p2
-        x3, y3 = q1
-        x4, y4 = q2
-
-        denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-        if abs(denom) < 1e-6:
-            return None
-
-        px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / denom
-        py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / denom
-
-        return [float(px), float(py)]
-
-    def new_find_hit_point(self):
+    def find_hit_point(self):
         if not self.check_buffer_validity():
+            # 화살 데이터 없는데 모래 튀는게 많은 경우 불관중
+            if len(self.splash_buffer) >= 5:
+                first_bbox = self.splash_buffer[0]
+                splash_x = (first_bbox[0] + first_bbox[2]) / 2
+                splash_y = first_bbox[3]
+
+                res = {
+                    "point": [float(splash_x), float(splash_y)],
+                    "inside": False,
+                    "type": "SPLASH_ONLY_MISS",
+                    "h": 0,
+                }
+                self.clear_buffer()
+                return res
+
             self.clear_buffer()
             return None
 
@@ -259,25 +257,31 @@ class ArrowService:
 
         y_min, y_max = min(y_coords), max(y_coords)
         height = y_max - y_min
-        if height < 5:
+        if height < 35:
             self.clear_buffer()
             return None
 
         hit_idx = -1
 
         for i in range(len(y_coords) - 1):
-            v_out = y_coords[i] - y_coords[i + 1]
-
-            if v_out > 0:
+            if y_coords[i] - y_coords[i + 1] > 0:
                 hit_idx = i
                 break
-        # 변곡점 있는데 버퍼안에 개수 적은경우 실제 화살팅기는게 아님
-        if hit_idx != -1 and len(self.tracking_buffer) < 7:
-            hit_idx = -1
 
         if hit_idx != -1:
             hit_tip = self.tracking_buffer[hit_idx]["tip"]
             raw_hit = [float(hit_tip[0]), float(hit_tip[1])]
+
+            if len(self.splash_buffer) >= 5:
+                first_bbox = self.splash_buffer[0]
+                splash_x = (first_bbox[0] + first_bbox[2]) / 2
+                splash_y = first_bbox[3]
+                return {
+                    "point": [float(splash_x), float(splash_y)],
+                    "inside": False,
+                    "type": "HIT_WITH_SPLASH_MISS",
+                    "h": height,
+                }
 
             # 변곡점 존재하는데, 과녁 아래 부분에서 발견된경우는 불관중
             if self.target is not None:
@@ -289,7 +293,7 @@ class ArrowService:
                         "type": "INFLECTION_TARGET_BELOW",
                         "h": height,
                     }
-
+            # 일반적인 적중 판정
             if self.target is not None and self._is_inside_target(raw_hit):
                 return {
                     "point": raw_hit,
@@ -297,23 +301,7 @@ class ArrowService:
                     "type": "INFLECTION_HIT",
                     "h": height,
                 }
-            # 변곡점이 있지만 과녁 내부에서 검출 부족으로 찾지 못한경우
-            # hit_idx tip이랑 hit_idx+1 tip y를 직선으로 쭉이어서 과녁 내부면 point찍고 아니면 기존 로직
-
-            # arrow1 = self.tracking_buffer[hit_idx]
-            # arrow2 = self.tracking_buffer[hit_idx + 1]
-
-            # p = self.intersect_line_point(
-            #     arrow1["tip"], arrow1["tail"], arrow2["tip"], arrow2["tail"]
-            # )
-            # if p and self._is_inside_target(p):
-            #     return {
-            #         "point": p,
-            #         "inside": True,
-            #         "type": "INTERSECTION_INSIDE_TARGET",
-            #         "h": height,
-            #     }
-
+            # 판정 데이터 약해서 역추적해서 과녁가까운 곳으로 임의의 점 찍기
             if self.target is not None:
                 closest_points = self._closest_point_on_polygon(raw_hit, self.target)
                 if closest_points:

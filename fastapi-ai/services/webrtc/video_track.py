@@ -47,6 +47,14 @@ class CameraVideoTrack(VideoStreamTrack):
 
             cv2.line(processed_frame, t1, t2, (0, 255, 0), 2, cv2.LINE_AA)
 
+        splash = self.arrow_service.current_splash
+
+        if splash:
+            s_x1, s_y1, s_x2, s_y2 = map(int, splash)
+            cv2.rectangle(
+                processed_frame, (s_x1, s_y1), (s_x2, s_y2), (0, 0, 255), 2, cv2.LINE_AA
+            )
+
         person = self.person_service.get_detection()
 
         target = self.arrow_service.target
@@ -73,7 +81,7 @@ class CameraVideoTrack(VideoStreamTrack):
             )
             cv2.putText(
                 processed_frame,
-                f"{person['conf']}",
+                f"{person['conf']:.2f}",
                 (x1, y1 - 5),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.9,
