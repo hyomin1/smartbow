@@ -104,7 +104,7 @@ export default function StreamingPage() {
     <div className="flex h-screen flex-col bg-stone-900">
       <StreamingHeader status={headerStatus} />
 
-      <main className="flex h-full flex-1 items-center justify-center gap-4 p-2">
+      <main className="flex h-full flex-1 flex-col items-center justify-center gap-4 overflow-y-auto sm:flex-row sm:overflow-hidden">
         <CameraPanel
           camId={camId}
           label={camId}
