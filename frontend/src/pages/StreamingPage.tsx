@@ -40,8 +40,19 @@ export default function StreamingPage() {
 
   const hit = useHit(message); //{ tip: [519, 443], inside: true, id: Date.now() }; //
   const pt = useHomographyTransform(polygon, renderRect);
+  
+ const speak = () => {
+    const msg = new SpeechSynthesisUtterance('관중입니다!');
+    msg.lang = 'ko-KR';
+    window.speechSynthesis.speak(msg);
+  };
+
   useEffect(() => {
     if (!hit) return;
+
+    if (hit.inside) {
+      speak();
+    }
 
     setHitLogs((prev) => {
       const next = [
