@@ -40,12 +40,21 @@ export default function StreamingPage() {
 
   const hit = useHit(message); //{ tip: [519, 443], inside: true, id: Date.now() }; //
   const pt = useHomographyTransform(polygon, renderRect);
+
+const speak = () => {
+  window.speechSynthesis.cancel();
+  const msg = new SpeechSynthesisUtterance('관중입니다!');
   
- const speak = () => {
-    const msg = new SpeechSynthesisUtterance('관중입니다!');
-    msg.lang = 'ko-KR';
-    window.speechSynthesis.speak(msg);
-  };
+  const voices = window.speechSynthesis.getVoices();
+  // 한국어 목소리 찾기
+  const koVoice = voices.find(v => v.name === 'Google 한국어' || v.lang === 'ko-KR');
+  
+  // TypeScript 에러 방지: undefined일 경우 null을 넣어줍니다.
+  msg.voice = koVoice || null; 
+  
+  msg.lang = 'ko-KR';
+  window.speechSynthesis.speak(msg);
+};
 
   useEffect(() => {
     if (!hit) return;
