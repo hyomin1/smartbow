@@ -42,29 +42,14 @@ export default function StreamingPage() {
   const pt = useHomographyTransform(polygon, renderRect);
 
 const speak = () => {
-  window.speechSynthesis.cancel();
+  // window.speechSynthesis.cancel();
+  // const msg = new SpeechSynthesisUtterance('관중입니다!');
   
-  const msg = new SpeechSynthesisUtterance('관중입니다!');
-  
-  const voices = window.speechSynthesis.getVoices();
-  
- 
-  const koVoice = voices.find(v => v.lang === 'ko-KR' || v.lang.startsWith('ko'));
-  
-  if (koVoice) {
-    msg.voice = koVoice;
-    console.log("선택된 목소리:", koVoice.name); 
-  } else {
-    console.warn("한국어 음성 엔진을 찾지 못해 시스템 기본값으로 시도합니다.");
-  }
-  
-  msg.lang = 'ko-KR';
-  msg.rate = 1.0; 
-  
-  msg.onstart = () => console.log("TTS 재생 시작");
-  msg.onerror = (e) => console.error("TTS 재생 에러:", e);
+  //  msg.lang = 'ko-KR';
+  // window.speechSynthesis.speak(msg);
 
-  window.speechSynthesis.speak(msg);
+  const audio = new Audio('/sound/sound.mp3')
+  audio.play();
 };
 
   useEffect(() => {
