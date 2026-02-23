@@ -103,6 +103,15 @@ async def hit_ws(ws: WebSocket, cam_id: str):
                 await send_polygon(ws, cam_id, (width, height))
                 continue
 
+            # 소리테스트용 끝나면 삭제
+            if msg_type == "hit":
+                clients = connected_clients.get(cam_id, {})
+                for client_ws in list(clients.keys()):
+                    try:
+                        await client_ws.send_json(msg)
+                    except Exception:
+                        continue
+
     except WebSocketDisconnect:
         if cam_id in connected_clients and ws in connected_clients[cam_id]:
             del connected_clients[cam_id][ws]

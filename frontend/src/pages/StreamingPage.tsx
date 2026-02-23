@@ -23,6 +23,8 @@ export default function StreamingPage() {
   const targetVideoRef = useRef<HTMLVideoElement>(null);
   const shooterVideoRef = useRef<HTMLVideoElement>(null);
 
+  const audioRef = useRef(new Audio("/sound/sound.mp3"))
+
   const [polygon, setPolygon] = useState<number[][] | null>(null);
   const [hitLogs, setHitLogs] = useState<HitLog[]>([]);
 
@@ -42,15 +44,16 @@ export default function StreamingPage() {
   const pt = useHomographyTransform(polygon, renderRect);
 
 const speak = () => {
-  // window.speechSynthesis.cancel();
-  // const msg = new SpeechSynthesisUtterance('관중입니다!');
-  
-  //  msg.lang = 'ko-KR';
-  // window.speechSynthesis.speak(msg);
+    const audio = audioRef.current;
+    if (!audio) return;
 
-  const audio = new Audio('/sound/sound.mp3')
-  audio.play();
-};
+    // 이미 재생 중이면 처음으로 되감기 (연속 적중 시 대응)
+    audio.pause();
+    audio.currentTime = 0;
+    
+    // 재생 시도 (사용자 상호작용 후 호출되어야 함)
+    audio.play().catch(e => console.log("오디오 재생 실패:", e));
+  };
 
   useEffect(() => {
     if (!hit) return;
