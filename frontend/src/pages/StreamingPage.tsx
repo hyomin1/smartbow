@@ -52,7 +52,16 @@ const speak = () => {
     audio.currentTime = 0;
     
     // 재생 시도 (사용자 상호작용 후 호출되어야 함)
-    audio.play().catch(e => console.log("오디오 재생 실패:", e));
+    audio.play()
+    .then(() => {
+      // 실제 스피커로 소리가 나가기 시작할 때 실행됨
+      console.log("오디오 재생 성공! (Postman 데이터 수신됨)");
+    })
+    .catch(e => {
+      // 자동 재생 정책 등으로 막혔을 때 실행됨
+      console.warn("⚠️ 오디오 재생 실패:", e.message);
+      console.info("브라우저 화면을 한 번 클릭한 뒤 다시 시도해 보세요.");
+    });
   };
 
   useEffect(() => {
