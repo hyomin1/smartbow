@@ -80,7 +80,7 @@ const speak = () => {
     });
   }, [hit]);
 
-  //const isDev = import.meta.env.VITE_ENV === "dev";
+  const isDev = import.meta.env.VITE_ENV === "dev";
 
   const { wsStatus, hasError, currentError } = useStreamingStatus({
     readyState,
@@ -185,8 +185,8 @@ const speak = () => {
           onConnectionStateChange={shooterCam.onStateChange}
         /> */}
          <CameraPanel
-          camId={"target4"}
-          label={"target4"}
+          camId={isDev ? "target-test2" : "target4"}
+          label={isDev ? "target-test2" : "target4"}
           videoRef={shooterVideoRef}
           onError={shooterCam.onError}
           onConnectionStateChange={shooterCam.onStateChange}
