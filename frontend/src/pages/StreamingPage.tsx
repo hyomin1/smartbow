@@ -80,7 +80,7 @@ const speak = () => {
     });
   }, [hit]);
 
-  const isDev = import.meta.env.VITE_ENV === "dev";
+  //const isDev = import.meta.env.VITE_ENV === "dev";
 
   const { wsStatus, hasError, currentError } = useStreamingStatus({
     readyState,
