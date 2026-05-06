@@ -177,20 +177,20 @@ const speak = () => {
           )}
         </CameraPanel>
 
-        {/* <CameraPanel
+        <CameraPanel
           camId={isDev ? "shooter-test" : "shooter1"}
           label={isDev ? "shooter-test" : "shooter1"}
           videoRef={shooterVideoRef}
           onError={shooterCam.onError}
           onConnectionStateChange={shooterCam.onStateChange}
-        /> */}
-         <CameraPanel
+        />
+         {/* <CameraPanel
           camId={isDev ? "target-test2" : "target4"}
           label={isDev ? "target-test2" : "target4"}
           videoRef={shooterVideoRef}
           onError={shooterCam.onError}
           onConnectionStateChange={shooterCam.onStateChange}
-        />
+        /> */}
       </main>
 
       <HitLogs hitLogs={hitLogs} />
